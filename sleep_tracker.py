@@ -3,6 +3,7 @@ import os
 import zipfile
 import sqlite3
 import json
+import tempfile
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
 import gspread
@@ -44,41 +45,48 @@ def download_zip_content(drive_service, file_id):
 def extract_sleep_data(zip_bytes):
     with zipfile.ZipFile(BytesIO(zip_bytes)) as z:
         db_content = z.read('health_connect_export.db')
-    db = sqlite3.connect(':memory:')
-    db.executescript(db_content.decode('latin-1') if isinstance(db_content, bytes) else db_content)
-    c = db.cursor()
     
-    c.execute('SELECT s.row_id, s.start_time, s.end_time, datetime(s.start_time/1000, "unixepoch", "+2 hours") as bedtime FROM sleep_session_record_table s ORDER BY s.start_time DESC')
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
+        tmp.write(db_content)
+        tmp_path = tmp.name
     
-    for sess in c.fetchall():
-        row_id, start_ms, end_ms, bedtime = sess
-        total_sec = int((end_ms - start_ms)/1000)
+    try:
+        db = sqlite3.connect(tmp_path)
+        c = db.cursor()
         
-        c.execute('SELECT COUNT(*) FROM sleep_stages_table WHERE parent_key=?', (row_id,))
-        stage_count = c.fetchone()[0]
-        if total_sec < 7200 or stage_count == 0:
-            continue
+        c.execute('SELECT s.row_id, s.start_time, s.end_time, datetime(s.start_time/1000, "unixepoch", "+2 hours") as bedtime FROM sleep_session_record_table s ORDER BY s.start_time DESC')
         
-        c.execute('SELECT stage_type, round(SUM((stage_end_time-stage_start_time)/1000/60.0),0) FROM sleep_stages_table WHERE parent_key=? GROUP BY stage_type', (row_id,))
-        stages = {r[0]: int(r[1]) for r in c.fetchall()}
-        
-        c.execute('SELECT round(AVG(heart_rate_variability_millis),1) FROM heart_rate_variability_rmssd_record_table WHERE time/1000 BETWEEN ? AND ?', (start_ms/1000, end_ms/1000))
-        hrv = c.fetchone()[0] or ''
-        
-        c.execute('SELECT COUNT(*) FROM sleep_stages_table WHERE parent_key=? AND stage_type=1', (row_id,))
-        num_awakenings = c.fetchone()[0] or 0
-        
-        awake = stages.get(1, 0)
-        light = stages.get(4, 0)
-        deep = stages.get(5, 0)
-        rem = stages.get(6, 0)
-        slept_sec = total_sec - awake*60
+        for sess in c.fetchall():
+            row_id, start_ms, end_ms, bedtime = sess
+            total_sec = int((end_ms - start_ms)/1000)
+            
+            c.execute('SELECT COUNT(*) FROM sleep_stages_table WHERE parent_key=?', (row_id,))
+            stage_count = c.fetchone()[0]
+            if total_sec < 7200 or stage_count == 0:
+                continue
+            
+            c.execute('SELECT stage_type, round(SUM((stage_end_time-stage_start_time)/1000/60.0),0) FROM sleep_stages_table WHERE parent_key=? GROUP BY stage_type', (row_id,))
+            stages = {r[0]: int(r[1]) for r in c.fetchall()}
+            
+            c.execute('SELECT round(AVG(heart_rate_variability_millis),1) FROM heart_rate_variability_rmssd_record_table WHERE time/1000 BETWEEN ? AND ?', (start_ms/1000, end_ms/1000))
+            hrv = c.fetchone()[0] or ''
+            
+            c.execute('SELECT COUNT(*) FROM sleep_stages_table WHERE parent_key=? AND stage_type=1', (row_id,))
+            num_awakenings = c.fetchone()[0] or 0
+            
+            awake = stages.get(1, 0)
+            light = stages.get(4, 0)
+            deep = stages.get(5, 0)
+            rem = stages.get(6, 0)
+            slept_sec = total_sec - awake*60
+            
+            db.close()
+            return [bedtime, slept_sec, awake*60, deep, rem, light, hrv, num_awakenings, '', '', '', '', '', '', '']
         
         db.close()
-        return [bedtime, slept_sec, awake*60, deep, rem, light, hrv, num_awakenings, '', '', '', '', '', '', '']
-    
-    db.close()
-    return None
+        return None
+    finally:
+        os.unlink(tmp_path)
 
 def append_to_sheet(sheets_service, row_data, sheet_id):
     try:
