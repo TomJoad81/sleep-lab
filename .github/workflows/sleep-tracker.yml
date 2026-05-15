@@ -2,7 +2,7 @@ name: Sleep Tracker
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Ogni ora
+    - cron: '*/5 * * * *'  # Ogni 5 minuti
   workflow_dispatch:
 
 permissions:
