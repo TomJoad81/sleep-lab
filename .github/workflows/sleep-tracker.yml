@@ -2,7 +2,7 @@ name: Sleep Tracker
 
 on:
   schedule:
-    - cron: '15 9 * * *'  # Ogni giorno alle 6:00 UTC (9:15 CET)
+    - cron: '15 21 * * *'  # Ogni giorno alle 21:15 UTC (23:15 CET)
   workflow_dispatch:  # Permette di eseguire manualmente
 
 jobs:
