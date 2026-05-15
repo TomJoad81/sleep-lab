@@ -2,29 +2,41 @@ name: Sleep Tracker
 
 on:
   schedule:
-    - cron: '15 21 * * *'  # Ogni giorno alle 21:15 UTC (23:15 CET)
-  workflow_dispatch:  # Permette di eseguire manualmente
+    - cron: '0 * * * *'  # Ogni ora
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   update-sleep-data:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v3
-      - run: cat sleep_tracker.py | head -80
+      - uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
         run: |
           pip install google-auth google-api-python-client gspread
-      
+
       - name: Create credentials file
         run: |
           echo '${{ secrets.SLEEP_TRACKER_CREDENTIALS }}' > sleep-tracker-credentials.json
-      
+
       - name: Run sleep tracker
         run: |
           python sleep_tracker.py
+
+      - name: Keep repo active
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          echo "Last run: $(date)" > last_run.txt
+          git add last_run.txt
+          git commit -m "Auto: sleep data updated $(date +'%Y-%m-%d %H:%M')"
+          git push
