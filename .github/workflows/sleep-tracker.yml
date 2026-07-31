@@ -39,5 +39,4 @@ jobs:
           echo "Last run: $(date)" > last_run.txt
           git add last_run.txt
           git commit -m "Auto: sleep data updated $(date +'%Y-%m-%d %H:%M')"
-          git pull --rebase origin main
           git push
