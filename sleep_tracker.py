@@ -3,6 +3,8 @@ import os
 import zipfile
 import sqlite3
 import tempfile
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from io import BytesIO
 import gspread
 from google.oauth2.service_account import Credentials
@@ -52,10 +54,12 @@ def extract_sleep_data(zip_bytes, existing_dates):
         db = sqlite3.connect(tmp_path)
         c = db.cursor()
 
-        c.execute('SELECT s.row_id, s.start_time, s.end_time, datetime(s.start_time/1000, "unixepoch", "+2 hours") as bedtime FROM sleep_session_record_table s ORDER BY s.start_time DESC')
+        c.execute('SELECT s.row_id, s.start_time, s.end_time FROM sleep_session_record_table s ORDER BY s.start_time DESC')
 
         for sess in c.fetchall():
-            row_id, start_ms, end_ms, bedtime = sess
+            row_id, start_ms, end_ms = sess
+            # Fuso Europe/Rome: gestisce da solo ora legale (+2h) e solare (+1h)
+            bedtime = datetime.fromtimestamp(start_ms/1000, ZoneInfo("Europe/Rome")).strftime("%Y-%m-%d %H:%M:%S")
             total_sec = int((end_ms - start_ms)/1000)
 
             c.execute('SELECT COUNT(*) FROM sleep_stages_table WHERE parent_key=?', (row_id,))
